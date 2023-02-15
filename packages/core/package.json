@@ -9,7 +9,7 @@
     "lint": "eslint *.ts*",
     "build": "swc ./src --delete-dir-on-start -d dist/",
     "start": "node -r dotenv/config dist/index.js",
-    "deploy": "node get-luau && pnpm build && pnpm start"
+    "deploy": "node get-luau && pnpm start"
   },
   "devDependencies": {
     "@swc/cli": "^0.1.61",
