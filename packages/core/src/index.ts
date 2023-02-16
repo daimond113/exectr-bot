@@ -166,14 +166,14 @@ async function main() {
 					)?.value
 					if (!code) throw new Error("Unexpected option")
 
-					await executeLuau(code)
+					return await executeLuau(code)
 				} else if (req.body.data.type === ApplicationCommandType.Message) {
 					const { content: rawCode } =
 						req.body.data.resolved.messages[req.body.data.target_id]
 					const code =
 						/```(?:([\w-]+)\n)?([\s\S]*?)```/gm.exec(rawCode)?.[2] ?? rawCode
 
-					await executeLuau(code)
+					return await executeLuau(code)
 				}
 			}
 
