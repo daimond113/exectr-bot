@@ -1,12 +1,13 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 import Fastify, { type FastifyError } from "fastify"
 import { verifyKey } from "discord-interactions"
-import type {
+import {
 	APIInteraction,
 	APIInteractionResponse,
 	RESTPostAPIChatInputApplicationCommandsJSONBody,
 	APIApplicationCommandSubcommandOption,
 	APIApplicationCommandOptionChoice,
+	ApplicationCommandType,
 } from "discord-api-types/v10"
 import {
 	Routes,
@@ -14,7 +15,11 @@ import {
 	InteractionResponseType,
 } from "discord-api-types/v10"
 import { REST } from "@discordjs/rest"
-import { codeBlock, SlashCommandBuilder } from "@discordjs/builders"
+import {
+	codeBlock,
+	ContextMenuCommandBuilder,
+	SlashCommandBuilder,
+} from "@discordjs/builders"
 import { type ChildProcess, fork } from "child_process"
 import { dirname, join } from "path"
 import { fileURLToPath } from "url"
@@ -23,6 +28,7 @@ import { PassThrough } from "stream"
 import getStream from "get-stream"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+const luauLanguageFile = join(__dirname, "languages", "luau.js")
 
 type ClosedChildProcess = Pick<ChildProcess, "exitCode" | "signalCode"> & {
 	stdoutEncoded: string
@@ -68,6 +74,9 @@ async function main() {
 							)
 					)
 					.toJSON(),
+				new ContextMenuCommandBuilder()
+					.setName("Execute Luau")
+					.setType(ApplicationCommandType.Message),
 			] as RESTPostAPIChatInputApplicationCommandsJSONBody[],
 		})
 	}
@@ -115,27 +124,12 @@ async function main() {
 			},
 		],
 		handler: async (req, res) => {
-			if (req.body.type === InteractionType.Ping) {
-				return { type: InteractionResponseType.Pong }
-			} else if (req.body.type === InteractionType.ApplicationCommand) {
-				if (!("options" in req.body.data))
-					throw new Error("Unexpected interaction")
-
-				res.send({
-					type: InteractionResponseType.DeferredChannelMessageWithSource,
-				})
-
-				const { name: language, options } = (req.body.data.options?.[0] ??
-					{}) as APIApplicationCommandSubcommandOption
-				if (!language || language !== "luau")
-					throw new Error("Unexpected option")
-
-				const code = (
-					options?.[0] as APIApplicationCommandOptionChoice<string> | undefined
-				)?.value
-				if (!code) throw new Error("Unexpected option")
-
-				const child = fork(join(__dirname, "languages", "luau.js"), [code], {
+			const respondURL = Routes.webhookMessage(
+				process.env.DISCORD_CLIENT_ID!,
+				req.body.token
+			)
+			const executeLuau = async (code: string) => {
+				const child = fork(luauLanguageFile, [code], {
 					silent: true,
 				})
 				const { stdoutEncoded, stderrEncoded } = await childClose(child)
@@ -143,15 +137,52 @@ async function main() {
 				let string = ""
 				if (stdoutEncoded) string += `📝 Logs:\n${stdoutEncoded}\n`
 				if (stderrEncoded) string += `❌ Errors:\n${stderrEncoded}\n`
-				rest.patch(
-					Routes.webhookMessage(process.env.DISCORD_CLIENT_ID!, req.body.token),
-					{
-						body: {
-							content: codeBlock(string),
-						},
-					}
-				)
+				rest.patch(respondURL, {
+					body: {
+						content: codeBlock(string),
+					},
+				})
 			}
+
+			if (req.body.type === InteractionType.Ping) {
+				return { type: InteractionResponseType.Pong }
+			}
+
+			res.send({
+				type: InteractionResponseType.DeferredChannelMessageWithSource,
+			})
+
+			if (req.body.type === InteractionType.ApplicationCommand) {
+				if (req.body.data.type === ApplicationCommandType.ChatInput) {
+					const { name: language, options } = (req.body.data.options?.[0] ??
+						{}) as APIApplicationCommandSubcommandOption
+					if (!language || language !== "luau")
+						throw new Error("Unexpected option")
+
+					const code = (
+						options?.[0] as
+							| APIApplicationCommandOptionChoice<string>
+							| undefined
+					)?.value
+					if (!code) throw new Error("Unexpected option")
+
+					await executeLuau(code)
+				} else if (req.body.data.type === ApplicationCommandType.Message) {
+					const { content: rawCode } =
+						req.body.data.resolved.messages[req.body.data.target_id]
+					const code =
+						/```(?:([\w-]+)\n)?([\s\S]*?)```/gm.exec(rawCode)?.[2] ?? rawCode
+
+					await executeLuau(code)
+				}
+			}
+
+			rest.patch(respondURL, {
+				body: {
+					content: "Unexpected interaction",
+				},
+			})
+
 			throw new Error("Unhandled")
 		},
 	})
