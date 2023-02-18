@@ -139,7 +139,12 @@ async function main() {
 				if (stderrEncoded) string += `❌ Errors:\n${stderrEncoded}\n`
 				rest.patch(respondURL, {
 					body: {
-						content: codeBlock(string),
+						content: codeBlock(
+							string.substring(
+								0,
+								2000 - 7 /* equivalent to an empty codeblock + a new line */
+							)
+						),
 					},
 				})
 			}
