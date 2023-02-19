@@ -129,24 +129,37 @@ async function main() {
 				req.body.token
 			)
 			const executeLuau = async (code: string) => {
-				const child = fork(luauLanguageFile, [code], {
-					silent: true,
-				})
-				const { stdoutEncoded, stderrEncoded } = await childClose(child)
+				let responded = false
+				try {
+					const child = fork(luauLanguageFile, [code], {
+						silent: true,
+						timeout: 14.5 * 1000,
+					})
+					const { stdoutEncoded, stderrEncoded } = await childClose(child)
 
-				let string = ""
-				if (stdoutEncoded) string += `📝 Logs:\n${stdoutEncoded}\n`
-				if (stderrEncoded) string += `❌ Errors:\n${stderrEncoded}\n`
-				rest.patch(respondURL, {
-					body: {
-						content: codeBlock(
-							string.substring(
-								0,
-								2000 - 7 /* equivalent to an empty codeblock + a new line */
-							)
-						),
-					},
-				})
+					let string = ""
+					if (stdoutEncoded) string += `📝 Logs:\n${stdoutEncoded}\n`
+					if (stderrEncoded) string += `❌ Errors:\n${stderrEncoded}\n`
+					await rest.patch(respondURL, {
+						body: {
+							content: codeBlock(
+								string.substring(
+									0,
+									2000 - 7 /* equivalent to an empty codeblock + a new line */
+								)
+							),
+						},
+					})
+					responded = true
+				} catch (e) {
+					console.error(e)
+					if (responded) return
+					rest.patch(respondURL, {
+						body: {
+							content: "There was an error.",
+						},
+					})
+				}
 			}
 
 			if (req.body.type === InteractionType.Ping) {
