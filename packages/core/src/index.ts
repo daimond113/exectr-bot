@@ -133,7 +133,7 @@ async function main() {
 				try {
 					const child = fork(luauLanguageFile, [code], {
 						silent: true,
-						timeout: 14.5 * 1000,
+						timeout: 10_000,
 					})
 					const { stdoutEncoded, stderrEncoded } = await childClose(child)
 
@@ -145,7 +145,7 @@ async function main() {
 							content: codeBlock(
 								string.substring(
 									0,
-									2000 - 7 /* equivalent to an empty codeblock + a new line */
+									2000 - 8 /* equivalent to an empty codeblock + 2 new lines */
 								)
 							),
 						},
